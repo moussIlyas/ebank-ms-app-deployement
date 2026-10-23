@@ -1,0 +1,10 @@
+servers:
+  hosts:
+    server1:
+      ansible_host: 51.170.134.36 # host ip  
+  
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/ssh-key-2026-10-16.key
+
+

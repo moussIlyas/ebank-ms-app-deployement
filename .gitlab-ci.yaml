@@ -1,0 +1,16 @@
+stages:
+  - run
+
+run:
+  stage: run
+  image: ansible/ansible
+  before_script:
+    - ansible --version
+    - cd ansible/
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/ssh-key-2026-10-16.key
+    - chmod 600 ~/.ssh/ssh-key-2026-10-16.key
+  script:
+    - ansible-playbook -i inventory.yaml playbook.yaml --syntax-check
+    - ansible-playbook -i inventory.yaml playbook.yaml

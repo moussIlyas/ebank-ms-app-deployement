@@ -1,0 +1,16 @@
+---
+- name: Clone git repo
+  ansible.builtin.git:
+    repo: https://github.com/moussIlyas/ebank-ms-app
+    dest: /home/ubuntu/ebank-ms-app
+
+- name: Deploy app
+  community.docker.docker_compose_v2:
+    project_src: ebank-ms-app
+  register: output
+
+- name: Show results
+  ansible.builtin.debug:
+    var: output
+      
+  
