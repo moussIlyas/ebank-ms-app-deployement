@@ -1,0 +1,183 @@
+# ==============================================================================
+#  Ebank microservices - BASE stack (shared by both modes, safe defaults:
+#  no host ports are published here).
+#
+#  DEV  (dev profile, every service reachable on 127.0.0.1):
+#    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --wait
+#
+#  PROD (pro profile, hardened, only the gateway is published):
+#    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait
+#
+#  How configuration flows (identical to the IDE layout):
+#    ./config-repo  ->  mounted read-only at /app/config-repo.
+#                       Each jar runs in WORKDIR /app/<module> and imports
+#                       ../config-repo/global.properties +
+#                       ../config-repo/<name>-<profile>.properties (see each
+#                       module's application.properties) - same files as always.
+#    ./.env         ->  injected as real OS env vars (env_file). Inside a
+#                       container ../.env does not exist, so the
+#                       optional:file:../.env import no-ops and the OS env vars
+#                       win. DB_HOST and the Eureka URL are overridden below
+#                       because "localhost" would be the container itself.
+# ==============================================================================
+name: ebank-ms
+
+x-app: &app
+  env_file:
+    - .env
+  environment:
+    # JSON property names are exact -> no env-var spelling pitfalls for the
+    # container-only overrides (Eureka URL from config-repo/global.properties
+    # + register a routable container IP instead of a random hostname).
+    SPRING_APPLICATION_JSON: |-
+      {
+        "eureka": {
+          "client": {
+            "service-url": { "defaultZone": "http://discovery-service:8761/eureka" }
+          },
+          "instance": {
+            "prefer-ip-address": true
+          }
+        }
+      }
+    DB_HOST: mariadb
+    TZ: UTC
+  volumes:
+    - ./config-repo:/app/config-repo:ro
+  networks:
+    - ebank
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging: &app-logging
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-app-healthcheck: &app-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 40s
+
+services:
+  # ------------------------------------------------------------- database --
+  # docker/init-db.sh (docker-entrypoint-initdb.d) creates customer-db,
+  # accounts-db and the app user on the FIRST start of an empty volume.
+  # Credentials come from .env - never from the image or this file.
+  mariadb:
+    image: mariadb:11.8
+    container_name: ebank-mariadb
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?missing - copy .env.example to .env}
+      DB_USERNAME: ${DB_USERNAME:?missing - copy .env.example to .env}
+      DB_PASSWORD: ${DB_PASSWORD:?missing - copy .env.example to .env}
+      MARIADB_AUTO_UPGRADE: "true"
+      TZ: UTC
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - ebank
+    logging: *app-logging
+
+  # ------------------------------------------------------------- services --
+  discovery-service:
+    <<: *app
+    image: ebank-ms/discovery-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: discovery-service
+        PORT: 8761
+    container_name: ebank-discovery
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://localhost:8761/actuator/health"]
+
+  gateway-service:
+    <<: *app
+    image: ebank-ms/gateway-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: gateway-service
+        PORT: 9999
+    container_name: ebank-gateway
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://localhost:9999/actuator/health"]
+
+  customer-service:
+    <<: *app
+    image: ebank-ms/customer-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: customer-service
+        PORT: 8056
+    container_name: ebank-customer
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://localhost:8056/actuator/health"]
+
+  ebank-service:
+    <<: *app
+    image: ebank-ms/ebank-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: ebank-service
+        PORT: 8057
+    container_name: ebank-accounts
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://localhost:8057/actuator/health"]
+
+  ebank-bot:
+    <<: *app
+    image: ebank-ms/ebank-bot:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: ebank-bot
+        PORT: 8058
+    container_name: ebank-bot
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://localhost:8058/actuator/health"]
+
+networks:
+  ebank:
+
+volumes:
+  mariadb-data:

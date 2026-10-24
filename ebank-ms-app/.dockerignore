@@ -1,0 +1,23 @@
+# VCS / IDE
+.git
+.idea
+.vscode
+*.iml
+
+# Maven build output (never bake stale jars into the build context)
+**/target
+**/build
+.mvn
+mvnw
+mvnw.cmd
+
+# Secrets must never enter the build context
+.env
+.env.*
+
+# Not needed to build the jars (config-repo + .env are wired at runtime,
+# compose files / README / docker/ are runtime-only assets)
+config-repo
+docker
+docker-compose*.yml
+README.md

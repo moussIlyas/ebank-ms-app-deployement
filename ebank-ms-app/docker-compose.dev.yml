@@ -1,0 +1,44 @@
+# ==============================================================================
+#  DEV overlay - run TOGETHER with docker-compose.yml:
+#
+#    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --wait
+#
+#  - forces SPRING_PROFILES_ACTIVE=dev (config-repo/<service>-dev.properties)
+#  - publishes every service on the host, loopback-only (127.0.0.1) so nothing
+#    is reachable from the LAN:
+#      Eureka 8761 | Gateway 9999 | customers 8056 | accounts 8057 | bot 8058
+#      MariaDB 3306 (for IDE / mvnw runs of single modules on the host)
+# ==============================================================================
+x-dev-mode: &dev-mode
+  environment:
+    SPRING_PROFILES_ACTIVE: dev
+
+services:
+  mariadb:
+    ports:
+      - "127.0.0.1:3306:3306"
+
+  discovery-service:
+    <<: *dev-mode
+    ports:
+      - "127.0.0.1:8761:8761"
+
+  gateway-service:
+    <<: *dev-mode
+    ports:
+      - "127.0.0.1:9999:9999"
+
+  customer-service:
+    <<: *dev-mode
+    ports:
+      - "127.0.0.1:8056:8056"
+
+  ebank-service:
+    <<: *dev-mode
+    ports:
+      - "127.0.0.1:8057:8057"
+
+  ebank-bot:
+    <<: *dev-mode
+    ports:
+      - "127.0.0.1:8058:8058"

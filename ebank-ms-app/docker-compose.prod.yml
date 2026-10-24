@@ -1,0 +1,69 @@
+# ==============================================================================
+#  PROD overlay - run TOGETHER with docker-compose.yml:
+#
+#    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait
+#
+#  - forces SPRING_PROFILES_ACTIVE=pro (config-repo/<service>-pro.properties)
+#  - only the gateway is published: it is the single entry point
+#    (Eureka, the services and MariaDB stay on the internal network)
+#  - JVM containers are hardened: read-only root filesystem (+ tmpfs /tmp),
+#    no capabilities, no-new-privileges
+#  - memory limits per service; the JVM sizes its heap from the cgroup limit
+#    (-XX:MaxRAMPercentage in the Dockerfile)
+#  - .env must exist on the host with production values (never committed);
+#    on a real cluster replace env_file with your secret manager's env injection
+# ==============================================================================
+x-prod-mode: &prod-mode
+  environment:
+    SPRING_PROFILES_ACTIVE: pro
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp
+
+services:
+  mariadb:
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  discovery-service:
+    <<: *prod-mode
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  gateway-service:
+    <<: *prod-mode
+    ports:
+      - "9999:9999"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  customer-service:
+    <<: *prod-mode
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  ebank-service:
+    <<: *prod-mode
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  ebank-bot:
+    <<: *prod-mode
+    deploy:
+      resources:
+        limits:
+          memory: 768m

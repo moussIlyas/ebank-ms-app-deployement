@@ -3,7 +3,9 @@ stages:
 
 run:
   stage: run
-  image: ansible/ansible
+  image: alpine/ansible
+  variables:
+    ANSIBLE_HOST_KEY_CHECKING: "false"
   before_script:
     - ansible --version
     - cd ansible/
