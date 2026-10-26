@@ -1,11 +1,46 @@
 stages:
   - run
 
+variables:
+  ANSIBLE_HOST_KEY_CHECKING: "false"
+
+# ---------------------------------------------------------------------------
+# Level 1 - change detection.
+# Pushes that touch ONLY ebank-ms-app/config-repo/ -> DEPLOY_MODE=restart
+# (containers restart to re-read config, no image is ever built).
+# Anything else -> DEPLOY_MODE=deploy (normal pipeline behaviour).
+# ---------------------------------------------------------------------------
+detect:
+  stage: .pre
+  image: alpine/git
+  variables:
+    GIT_DEPTH: "0"   # full history so the diff against the previous commit is reliable
+  script:
+    - |
+      BEFORE="$CI_COMMIT_BEFORE_SHA"
+      if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+         || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+        BEFORE="$(git rev-parse HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)"
+      fi
+      CHANGED="$(git diff --name-only "$BEFORE" "$CI_COMMIT_SHA")"
+      echo "Changed files ($BEFORE..$CI_COMMIT_SHA):"
+      echo "$CHANGED"
+      CONFIG_COUNT=$(echo "$CHANGED" | grep -c '^ebank-ms-app/config-repo/' || true)
+      OTHER_COUNT=$(echo "$CHANGED" | grep -v '^ebank-ms-app/config-repo/' | grep -c . || true)
+      if [ "$CONFIG_COUNT" -gt 0 ] && [ "$OTHER_COUNT" -eq 0 ]; then
+        DEPLOY_MODE=restart
+      else
+        DEPLOY_MODE=deploy
+      fi
+      echo "DEPLOY_MODE=$DEPLOY_MODE"
+      printf 'DEPLOY_MODE=%s\n' "$DEPLOY_MODE" > deploy.env
+  artifacts:
+    reports:
+      env: deploy.env
+
 run:
   stage: run
   image: alpine/ansible
-  variables:
-    ANSIBLE_HOST_KEY_CHECKING: "false"
   before_script:
     - ansible --version
     - cd ansible/
@@ -15,4 +50,4 @@ run:
     - chmod 600 ~/.ssh/ssh-key-2026-10-16.key
   script:
     - ansible-playbook -i inventory.yaml playbook.yaml --syntax-check
-    - ansible-playbook -i inventory.yaml playbook.yaml
+    - ansible-playbook -i inventory.yaml playbook.yaml -e "deploy_mode=${DEPLOY_MODE:-deploy}"

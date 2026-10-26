@@ -4,13 +4,25 @@
     repo: https://github.com/moussIlyas/ebank-ms-app
     dest: /home/ubuntu/ebank-ms-app
 
+- name: Restart services (config-only change - no rebuild)
+  community.docker.docker_compose_v2:
+    project_src: /home/ubuntu/ebank-ms-app
+    services:
+      - discovery-service
+      - gateway-service
+      - customer-service
+      - ebank-service
+      - ebank-bot
+    state: restarted
+  when: deploy_mode | default('deploy') == 'restart'
+
 - name: Deploy app
   community.docker.docker_compose_v2:
-    project_src: ebank-ms-app
+    project_src: /home/ubuntu/ebank-ms-app
   register: output
+  when: deploy_mode | default('deploy') != 'restart'
 
 - name: Show results
   ansible.builtin.debug:
     var: output
-      
-  
+  when: deploy_mode | default('deploy') != 'restart'
